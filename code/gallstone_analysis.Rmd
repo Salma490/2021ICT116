@@ -80,20 +80,36 @@ write_csv(df, "data/gallstone_clean.csv")
 
 ## 3.3 Age and other range checks
 
-```{r ranges}
-range(df$age)
-df |> filter(age > 85) |> select(age, gender, gallstone_status, body_mass_index_bmi)
-
-# Quick boxplots to spot extreme values in numeric variables
+```{r boxplots, fig.width=11, fig.height=9}
 df |>
   select(where(is.numeric)) |>
   pivot_longer(everything()) |>
-  ggplot(aes(x = name, y = value)) +
-  geom_boxplot() +
-  facet_wrap(~ name, scales = "free", ncol = 6) +
-  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+  ggplot(aes(x = "", y = value)) +
+  geom_boxplot(fill = "lightblue") +
+  facet_wrap(~ name, scales = "free_y", ncol = 5,
+             labeller = label_wrap_gen(22)) +
+  labs(x = NULL, y = NULL, title = "Distribution of numeric variables") +
+  theme(strip.text = element_text(size = 7),
+        axis.text.x = element_blank(), axis.ticks.x = element_blank())
 ```
 
+## 3.4 Inspect suspicious values
+
+```{r suspicious}
+df |>
+  mutate(row_id = row_number()) |>
+  filter(obesity_percent > 150 |
+         high_density_lipoprotein_hdl > 150 |
+         muscle_mass_mm < 20 |
+         total_body_water_tbw < 20 |
+         glomerular_filtration_rate_gfr < 20 |
+         low_density_lipoprotein_ldl < 30) |>
+  select(row_id, age, gender, gallstone_status, weight,
+         body_mass_index_bmi, obesity_percent, muscle_mass_mm,
+         total_body_water_tbw, high_density_lipoprotein_hdl,
+         low_density_lipoprotein_ldl, creatinine,
+         glomerular_filtration_rate_gfr)
+```
 
 # 4. Exploratory data analysis
 
