@@ -113,6 +113,154 @@ df |>
 
 # 4. Exploratory data analysis
 
+```{r eda-setup}
+# One colour pair used in every figure (colour-blind friendly)
+cols <- c(Gallstone = "#D55E00", No_gallstone = "#0072B2")
+theme_set(theme_minimal(base_size = 12))
+dir.create("figures", showWarnings = FALSE)
+```
+
+## 4.1 Class balance
+
+```{r eda-class}
+p1 <- df |>
+  count(gallstone_status) |>
+  ggplot(aes(gallstone_status, n, fill = gallstone_status)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = n), vjust = -0.4) +
+  scale_fill_manual(values = cols) +
+  labs(title = "Number of patients by gallstone status",
+       x = NULL, y = "Number of patients") +
+  theme(legend.position = "none")
+p1
+ggsave("figures/01_class_balance.png", p1, width = 5, height = 4, dpi = 300)
+```
+## 4.2 Demographics and hepatic fat
+
+```{r eda-demo}
+# Age distribution
+p2 <- ggplot(df, aes(age, fill = gallstone_status)) +
+  geom_histogram(binwidth = 5, colour = "white") +
+  facet_wrap(~ gallstone_status) +
+  scale_fill_manual(values = cols) +
+  labs(title = "Age distribution by gallstone status",
+       x = "Age (years)", y = "Patients") +
+  theme(legend.position = "none")
+p2
+ggsave("figures/02_age_distribution.png", p2, width = 7, height = 4, dpi = 300)
+
+# Proportion with gallstones in each gender
+p3 <- ggplot(df, aes(gender, fill = gallstone_status)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = cols) +
+  labs(title = "Gallstone status by gender", x = NULL,
+       y = "Proportion of patients", fill = "Status")
+p3
+ggsave("figures/03_gender.png", p3, width = 5, height = 4, dpi = 300)
+
+# Hepatic fat accumulation (0 = none ... 4 = very severe)
+p4 <- ggplot(df, aes(factor(hepatic_fat_accumulation_hfa),
+                     fill = gallstone_status)) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = cols) +
+  labs(title = "Hepatic fat accumulation grade by gallstone status",
+       x = "Hepatic fat grade (0 = none, 4 = very severe)",
+       y = "Patients", fill = "Status")
+p4
+ggsave("figures/04_hepatic_fat.png", p4, width = 6, height = 4, dpi = 300)
+```
+
+## 4.3 Existing conditions
+
+```{r eda-conditions}
+p5 <- df |>
+  select(gallstone_status, coronary_artery_disease_cad, hypothyroidism,
+         hyperlipidemia, diabetes_mellitus_dm) |>
+  pivot_longer(-gallstone_status) |>
+  group_by(gallstone_status, name) |>
+  summarise(pct_yes = mean(value == "Yes") * 100, .groups = "drop") |>
+  ggplot(aes(name, pct_yes, fill = gallstone_status)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  scale_fill_manual(values = cols) +
+  labs(title = "Prevalence of existing conditions",
+       x = NULL, y = "Patients with the condition (%)", fill = "Status")
+p5
+ggsave("figures/05_conditions.png", p5, width = 7, height = 4, dpi = 300)
+```
+## 4.4 Key variables by gallstone status
+
+```{r eda-box, fig.width=11, fig.height=8}
+key_vars <- c("age", "body_mass_index_bmi", "total_body_fat_ratio_tbfr_percent",
+              "visceral_fat_area_vfa", "visceral_fat_rating_vfr", "glucose",
+              "total_cholesterol_tc", "low_density_lipoprotein_ldl",
+              "high_density_lipoprotein_hdl", "triglyceride",
+              "aspartat_aminotransferaz_ast", "alanin_aminotransferaz_alt",
+              "c_reactive_protein_crp", "vitamin_d")
+
+p6 <- df |>
+  select(gallstone_status, all_of(key_vars)) |>
+  pivot_longer(-gallstone_status) |>
+  ggplot(aes(gallstone_status, value, fill = gallstone_status)) +
+  geom_boxplot(outlier.size = 0.8) +
+  facet_wrap(~ name, scales = "free_y", ncol = 4,
+             labeller = label_wrap_gen(24)) +
+  scale_fill_manual(values = cols) +
+  labs(title = "Key clinical variables by gallstone status",
+       x = NULL, y = NULL) +
+  theme(legend.position = "none", strip.text = element_text(size = 8),
+        axis.text.x = element_text(size = 7))
+p6
+ggsave("figures/06_key_variables.png", p6, width = 11, height = 8, dpi = 300)
+```
+```{r eda-medians}
+df |>
+  group_by(gallstone_status) |>
+  summarise(across(all_of(key_vars), ~ round(median(.x), 1))) |>
+  pivot_longer(-gallstone_status) |>
+  pivot_wider(names_from = gallstone_status, values_from = value)
+```
+## 4.5 Correlation between numeric variables
+
+```{r eda-corr, fig.width=10, fig.height=10}
+num_df <- df |> select(where(is.numeric))
+cm <- cor(num_df, method = "spearman")
+
+draw_corr <- function() {
+  corrplot(cm, method = "color", type = "lower", order = "hclust",
+           tl.cex = 0.6, tl.col = "black", diag = FALSE)
+}
+draw_corr()                                   # show in notebook
+
+png("figures/07_correlation_heatmap.png", width = 3000, height = 3000, res = 300)
+draw_corr()
+invisible(dev.off())                          # save to file
+```
+## 4.6 Principal component analysis
+
+```{r eda-pca}
+# TEMPORARY: leave out the single patient with an obesity value near 2000,
+# which looks like a data-entry error (we will decide this properly later)
+pca_data <- df |> filter(obesity_percent < 150)
+
+pca <- prcomp(select(pca_data, where(is.numeric)), scale. = TRUE)
+var_exp <- round(summary(pca)$importance[2, 1:2] * 100, 1)
+
+scores <- as_tibble(pca$x[, 1:2]) |>
+  mutate(status = pca_data$gallstone_status)
+
+p7 <- ggplot(scores, aes(PC1, PC2, colour = status)) +
+  geom_point(alpha = 0.7, size = 2) +
+  stat_ellipse(linewidth = 0.8) +
+  scale_colour_manual(values = cols) +
+  labs(title = "PCA of numeric variables",
+       x = paste0("PC1 (", var_exp[1], "% of variance)"),
+       y = paste0("PC2 (", var_exp[2], "% of variance)"),
+       colour = "Status")
+p7
+ggsave("figures/08_pca.png", p7, width = 6.5, height = 5, dpi = 300)
+```
 # 5. Statistical testing
 
 # 6. Predictive modelling
