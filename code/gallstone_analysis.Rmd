@@ -41,6 +41,60 @@ dim(raw)
 
 # 3. Data cleaning
 
+## 3.1 Standardise names and convert variable types
+
+```{r clean-and-types}
+df <- raw |>
+  clean_names() |>
+  mutate(
+    # Target: per UCI documentation 0 = gallstones present, 1 = absent
+    gallstone_status = factor(gallstone_status, levels = c(0, 1),
+                              labels = c("Gallstone", "No_gallstone")),
+    gender = factor(gender, levels = c(0, 1), labels = c("Male", "Female")),
+    across(c(coronary_artery_disease_cad, hypothyroidism,
+             hyperlipidemia, diabetes_mellitus_dm),
+           ~ factor(.x, levels = c(0, 1), labels = c("No", "Yes")))
+  )
+
+glimpse(df)
+table(df$gallstone_status)
+```
+## 3.2 Quality checks
+
+```{r quality}
+# Total missing values in the whole dataset (expected: 0)
+sum(is.na(df))
+
+# Duplicate rows (expected: 0)
+sum(duplicated(df))
+
+# Summary of every variable: check the min and max of each one
+summary(df)
+```
+
+## 3.3 Save the cleaned dataset
+
+```{r save-clean}
+write_csv(df, "data/gallstone_clean.csv")
+```
+
+## 3.3 Age and other range checks
+
+```{r ranges}
+range(df$age)
+df |> filter(age > 85) |> select(age, gender, gallstone_status, body_mass_index_bmi)
+
+# Quick boxplots to spot extreme values in numeric variables
+df |>
+  select(where(is.numeric)) |>
+  pivot_longer(everything()) |>
+  ggplot(aes(x = name, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ name, scales = "free", ncol = 6) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```
+
+
 # 4. Exploratory data analysis
 
 # 5. Statistical testing
