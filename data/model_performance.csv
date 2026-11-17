@@ -1,0 +1,4 @@
+model,accuracy,sensitivity,specificity,AUC,AUC_low95,AUC_high95
+Logistic,0.81,0.938,0.677,0.92,0.855,0.985
+RandomForest,0.857,0.906,0.806,0.943,0.886,1
+SVM,0.825,0.875,0.774,0.875,0.782,0.968
