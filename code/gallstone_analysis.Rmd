@@ -1,0 +1,54 @@
+---
+title: "Predicting Gallstone Disease from Clinical, Laboratory and Body-Composition Data in R"
+author: "A.S. Salma (2021/ICT/116)"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+# Make the project root the working directory, so paths like "data/..." work
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 7, fig.height = 5)
+set.seed(123)   # reproducibility
+```
+
+# 1. Load packages
+
+```{r packages}
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(skimr)
+library(naniar)
+library(corrplot)
+library(caret)
+library(randomForest)
+library(e1071)
+library(pROC)
+```
+
+# 2. Import data
+
+```{r import}
+raw <- read_excel("data/dataset-uci.xlsx")
+dim(raw)
+```
+
+# 3. Data cleaning
+
+# 4. Exploratory data analysis
+
+# 5. Statistical testing
+
+# 6. Predictive modelling
+
+# 7. Session information
+
+```{r session}
+sessionInfo()
+```
