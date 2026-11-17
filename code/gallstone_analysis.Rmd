@@ -263,6 +263,147 @@ ggsave("figures/08_pca.png", p7, width = 6.5, height = 5, dpi = 300)
 ```
 # 5. Statistical testing
 
+## 5.1 Normality check
+
+```{r normality}
+num_vars <- df |> select(where(is.numeric)) |> names()
+
+normality <- map_dfr(num_vars, function(v) {
+  p_g  <- shapiro.test(df[[v]][df$gallstone_status == "Gallstone"])$p.value
+  p_ng <- shapiro.test(df[[v]][df$gallstone_status == "No_gallstone"])$p.value
+  tibble(variable = v, p_gallstone = p_g, p_no_gallstone = p_ng,
+         normal_in_both = p_g > 0.05 & p_ng > 0.05)
+})
+
+table(normality$normal_in_both)   # TRUE = normal in both groups
+```
+## 5.2 Numeric variables: Wilcoxon rank-sum tests
+
+```{r wilcoxon}
+res_num <- map_dfr(num_vars, function(v) {
+  x <- df[[v]][df$gallstone_status == "Gallstone"]
+  y <- df[[v]][df$gallstone_status == "No_gallstone"]
+  w <- wilcox.test(x, y, exact = FALSE)
+
+  tibble(
+    variable            = v,
+    test                = "Wilcoxon",
+    summary_gallstone   = round(median(x), 2),      # median
+    summary_no_gallstone = round(median(y), 2),     # median
+    # AUC = probability that a random gallstone patient has a higher value
+    # than a random non-gallstone patient (0.5 = no difference)
+    auc                 = unname(w$statistic) / (length(x) * length(y)),
+    p_value             = w$p.value
+  )
+})
+```
+## 5.3 Categorical variables: Fisher's exact tests
+
+```{r fisher}
+cat_vars <- c("gender", "coronary_artery_disease_cad", "hypothyroidism",
+              "hyperlipidemia", "diabetes_mellitus_dm")
+
+res_cat <- map_dfr(cat_vars, function(v) {
+  tab <- table(df[[v]], df$gallstone_status)
+  # Percentage of patients in the 2nd level (Female / Yes) within each group
+  pct <- function(g) round(100 * tab[2, g] / sum(tab[, g]), 1)
+
+  tibble(
+    variable             = v,
+    test                 = "Fisher",
+    summary_gallstone    = pct("Gallstone"),        # % Female or % Yes
+    summary_no_gallstone = pct("No_gallstone"),
+    auc                  = NA_real_,
+    p_value              = fisher.test(tab)$p.value
+  )
+})
+```
+
+
+## 5.4 Combine results and adjust p-values
+
+```{r combine}
+results <- bind_rows(res_num, res_cat) |>
+  mutate(
+    p_adj = p.adjust(p_value, method = "BH"),
+    higher_in = case_when(
+      test == "Wilcoxon" & auc > 0.5 ~ "Gallstone",
+      test == "Wilcoxon" & auc < 0.5 ~ "No_gallstone",
+      test == "Fisher" & summary_gallstone > summary_no_gallstone ~ "Gallstone",
+      TRUE ~ "No_gallstone"),
+    effect = ifelse(test == "Wilcoxon", abs(2 * auc - 1), NA_real_),  # 0 to 1
+    significant = p_adj < 0.05
+  ) |>
+  arrange(p_adj)
+
+# How many variables are significant after correction?
+sum(results$significant)
+
+# Top 15 results
+results |>
+  mutate(across(c(auc, effect), ~ round(.x, 2)),
+         p_value = signif(p_value, 3), p_adj = signif(p_adj, 3)) |>
+  select(variable, test, summary_gallstone, summary_no_gallstone,
+         higher_in, effect, p_value, p_adj) |>
+  head(15)
+
+write_csv(results, "data/statistical_test_results.csv")
+```
+
+## 5.5 Figures
+
+```{r stats-fig1, fig.width=8, fig.height=6}
+p9 <- results |>
+  slice_head(n = 15) |>
+  ggplot(aes(x = reorder(variable, -log10(p_adj)), y = -log10(p_adj),
+             colour = higher_in)) +
+  geom_segment(aes(xend = variable, y = 0, yend = -log10(p_adj)), linewidth = 1) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  coord_flip() +
+  scale_colour_manual(values = cols) +
+  labs(title = "Top 15 variables differing by gallstone status",
+       subtitle = "Dashed line = adjusted p-value of 0.05 (BH)",
+       x = NULL, y = "-log10(adjusted p-value)", colour = "Higher in")
+p9
+ggsave("figures/09_top_variables.png", p9, width = 8, height = 6, dpi = 300)
+```
+
+```{r stats-fig2, fig.width=8, fig.height=6}
+p10 <- results |>
+  filter(test == "Wilcoxon") |>
+  mutate(signed_effect = ifelse(higher_in == "Gallstone", effect, -effect)) |>
+  ggplot(aes(signed_effect, -log10(p_adj), colour = significant)) +
+  geom_point(size = 2.5) +
+  geom_text(aes(label = ifelse(significant, variable, "")),
+            size = 2.5, hjust = -0.1, check_overlap = TRUE) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_vline(xintercept = 0) +
+  scale_colour_manual(values = c(`TRUE` = "#D55E00", `FALSE` = "grey60")) +
+  labs(title = "Effect size versus significance (numeric variables)",
+       x = "Effect size (negative = higher in No_gallstone; positive = higher in Gallstone)",
+       y = "-log10(adjusted p-value)", colour = "Significant")
+p10
+ggsave("figures/10_effect_vs_significance.png", p10, width = 8, height = 6, dpi = 300)
+```
+
+## 5.6 Adjusted check (optional)
+
+```{r adjusted}
+top_vars <- results |> filter(test == "Wilcoxon") |> slice_head(n = 5) |> pull(variable)
+
+map_dfr(top_vars, function(v) {
+  # scale the variable so odds ratios are "per 1 SD increase"
+  d <- df |> mutate(x = as.numeric(scale(.data[[v]])),
+                    y = as.integer(gallstone_status == "Gallstone"))
+  fit <- glm(y ~ x + age + gender, data = d, family = binomial)
+  s <- summary(fit)$coefficients["x", ]
+  tibble(variable = v,
+         odds_ratio_per_SD = round(exp(s["Estimate"]), 2),
+         p_value = signif(s["Pr(>|z|)"], 3))
+})
+```
+
 # 6. Predictive modelling
 
 # 7. Session information
