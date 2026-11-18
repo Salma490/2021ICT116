@@ -1,8 +1,8 @@
 Predicting Gallstone Disease from Clinical, Laboratory and Body-Composition Data in R
 
 Student: A.S. Salma (2021/ICT/116)
+
 Module: Bioinformatics, ICA 3
-Repository: 2021ICT116
 
 1. Abstract
 
